@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>태양광 시스템 설계 계산기</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background: #f4f7f6; padding: 20px; color: #333; }
+        .container { max-width: 900px; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin: auto; }
+        h2 { text-align: center; color: #0f4c81; border-bottom: 2px solid #0f4c81; padding-bottom: 15px; }
+        
+        .guide-box { background: #eef6ff; padding: 20px; border-radius: 10px; border-left: 5px solid #0f4c81; margin-bottom: 25px; }
+        .guide-box h3 { margin-top: 0; color: #0f4c81; font-size: 1.1em; }
+        .guide-box ol { margin: 0; padding-left: 20px; }
+        .guide-box li { margin-bottom: 5px; font-size: 0.95em; }
+
+        .section-title { font-weight: bold; color: #0f4c81; margin: 25px 0 15px; display: flex; justify-content: space-between; align-items: center; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; font-size: 14px; }
+        th { background: #4a5568; color: white; }
+        
+        .grid-config { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; background: #edf2f7; padding: 25px; border-radius: 10px; }
+        .config-item { display: flex; flex-direction: column; gap: 8px; }
+        .config-item label { font-weight: bold; font-size: 0.9em; }
+        input, select { padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px; }
+        
+        .btn-calc { display: block; width: 100%; background: #28a745; color: white; border: none; padding: 18px; font-size: 1.2em; font-weight: bold; cursor: pointer; border-radius: 8px; margin-top: 30px; }
+        .btn-calc:hover { background: #218838; }
+        
+        .result-box { background: #fff; border: 2px solid #0f4c81; padding: 25px; margin-top: 30px; border-radius: 10px; display: none; }
+        .badge { padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: bold; color: white; }
+        .bg-success { background-color: #48bb78; }
+        .bg-danger { background-color: #f56565; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>☀️ 태양광 시스템 설계 계산기</h2>
+    
+    <div class="guide-box">
+        <h3>💡 시스템 사용 방법</h3>
+        <ol>
+            <li><b>부하 장비 설정:</b> 사용하실 장비의 소비전력(W)과 수량을 입력하세요.</li>
+            <li><b>시스템 설정:</b> 인버터 사용 여부를 체크하고 효율(%)을 직접 입력하세요.</li>
+            <li><b>분석 확인:</b> 산출 버튼을 누르면 부하율(%)별 일일 소비량과 필요 배터리 용량이 분석됩니다.</li>
+        </ol>
+    </div>
+
+    <div class="section-title">1. 부하 장비 설정 <button onclick="addRow()">+ 기기 추가</button></div>
+    <table>
+        <thead><tr><th>기기명</th><th>전력(W)</th><th>수량</th><th>삭제</th></tr></thead>
+        <tbody id="device-table">
+            <tr><td><input type="text" placeholder="예: CCTV"></td><td><input type="number" class="w-val" value="5"></td><td><input type="number" class="q-val" value="1"></td><td><button onclick="this.parentNode.parentNode.remove()">X</button></td></tr>
+        </tbody>
+    </table>
+
+    <div class="section-title">2. 시스템 설정</div>
+    <div class="grid-config">
+        <div class="config-item"><label>부조일(일)</label><input type="number" id="days" value="3"></div>
+        <div class="config-item"><label>시스템 전압(V)</label><input type="number" id="volt" value="12"></div>
+        <div class="config-item">
+            <label><input type="checkbox" id="use-inv" checked onchange="toggleInv()"> 인버터 사용 여부</label>
+            <input type="number" id="inv-eff" value="95" placeholder="인버터 효율(%) 입력">
+        </div>
+        <div class="config-item"><label>태양광 패널(W)</label><input type="number" id="solar-w" value="80"></div>
+        <div class="config-item"><label>일조 시간(시간)</label><input type="number" id="sun-h" value="3.5"></div>
+    </div>
+
+    <button class="btn-calc" onclick="calculate()">종합 용량 산출하기</button>
+
+    <div class="result-box" id="res">
+        <div id="res-content"></div>
+    </div>
+</div>
+
+<script>
+    // PWA 서비스 워커 등록
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').then(() => console.log('Service Worker Registered'));
+    }
+
+    function addRow() {
+        document.getElementById('device-table').innerHTML += '<tr><td><input type="text"></td><td><input type="number" class="w-val" value="5"></td><td><input type="number" class="q-val" value="1"></td><td><button onclick="this.parentNode.parentNode.remove()">X</button></td></tr>';
+    }
+    
+    function toggleInv() {
+        const enabled = document.getElementById('use-inv').checked;
+        document.getElementById('inv-eff').disabled = !enabled;
+    }
+
+    function calculate() {
+        let totalW = 0;
+        document.querySelectorAll('#device-table tr').forEach(r => {
+            totalW += (parseFloat(r.querySelector('.w-val').value) || 0) * (parseFloat(r.querySelector('.q-val').value) || 0);
+        });
+
+        const days = parseFloat(document.getElementById('days').value);
+        const volt = parseFloat(document.getElementById('volt').value);
+        const useInv = document.getElementById('use-inv').checked;
+        const invEffValue = parseFloat(document.getElementById('inv-eff').value) || 0;
+        const invEff = useInv ? (invEffValue / 100) : 1.0;
+        const solarW = parseFloat(document.getElementById('solar-w').value);
+        const sunH = parseFloat(document.getElementById('sun-h').value);
+        
+        const dailySolarWh = solarW * sunH * 0.9;
+        const ratios = [100, 90, 80, 70, 50, 30];
+        
+        let html = `<h3>📊 시스템 설계 결과 보고서</h3>`;
+        html += `<p>태양광 발전량: ${solarW}W × ${sunH}시간 = <b>하루 약 ${Math.ceil(dailySolarWh)}Wh</b></p>`;
+        if(useInv) { html += `<p>적용된 인버터 효율: <b>${invEffValue}%</b></p>`; }
+        
+        html += `<table style="width:100%; border-collapse:collapse; margin-top:15px;">
+                    <thead><tr style="background:#4a5568; color:white;">
+                    <th>부하율</th><th>전력(W)</th><th>일일(Wh)</th><th>${days}일(Wh)</th><th>추천 배터리</th><th>상태</th></tr></thead><tbody>`;
+        
+        ratios.forEach(pct => {
+            const w = totalW * (pct/100);
+            const dailyWh = (w * 24) / invEff;
+            const totalReqWh = dailyWh * days;
+            const reqAh = totalReqWh / volt;
+            const status = dailySolarWh >= (w * 24) ? '<span class="badge bg-success">충전 가능</span>' : '<span class="badge bg-danger">방전 위험</span>';
+            
+            html += `<tr><td>${pct}%</td><td>${w.toFixed(1)}W</td><td>${Math.ceil(dailyWh)}Wh</td><td>${Math.ceil(totalReqWh)}Wh</td><td>${volt}V ${Math.ceil(reqAh)}Ah 이상</td><td>${status}</td></tr>`;
+        });
+        
+        html += `</tbody></table>`;
+        document.getElementById('res-content').innerHTML = html;
+        document.getElementById('res').style.display = 'block';
+    }
+</script>
+</body>
+</html>
+{
+  "name": "태양광 시스템 설계 계산기",
+  "short_name": "태양광계산기",
+  "start_url": "./solar_calculator.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f4c81",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
+self.addEventListener('install', (e) => {
+    e.waitUntil(caches.open('solar-calc').then((cache) => cache.addAll(['./solar_calculator.html', './manifest.json', './icon-192.png'])));
+});
+self.addEventListener('fetch', (e) => {
+    e.respondWith(caches.match(e.request).then((response) => response || fetch(e.request)));
+});
